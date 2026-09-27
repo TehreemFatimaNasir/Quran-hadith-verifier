@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quran & Hadith Verifier</title>
+
+    <style>
+        :root {
+            --sky: #D3EDEF;
+            --sky-light: #EAF7F8;
+            --teal: #157A80;
+            --teal-dark: #0E4F57;
+            --text: #14454B;
+            --muted: #4F7F84;
+            --gold: #B8893A;
+            --gold-soft: rgba(184, 137, 58, 0.45);
+            --card: #FBFEFE;
+            --cream: #FFF9EA;
+            --line: #B7DDE0;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            width: 380px;
+            max-width: 100%;
+            min-height: 450px;
+            margin: 0;
+            padding: 18px;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(170deg, var(--sky) 0%, var(--sky-light) 100%);
+            color: var(--text);
+        }
+
+        .header { text-align: center; margin-bottom: 18px; }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            color: var(--teal-dark);
+            letter-spacing: .3px;
+        }
+        .header h1::after {
+            content: "";
+            display: block;
+            width: 70px;
+            height: 2px;
+            margin: 8px auto 0;
+            background: var(--gold);
+            border-radius: 2px;
+        }
+        .header p { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+
+        button, .btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            font-family: inherit;
+            text-align: center;
+            transition: transform .1s ease, background .15s ease;
+        }
+        button:active, .btn:active { transform: scale(.98); }
+
+        #cameraBtn { background: var(--teal); color: #fff; }
+        #cameraBtn:hover { background: var(--teal-dark); }
+
+        #uploadBtn {
+            background: #fff;
+            color: var(--teal-dark);
+            border: 1.5px solid var(--teal);
+        }
+        #uploadBtn:hover { background: #E4F4F5; }
+
+        #captureBtn { display: none; background: var(--teal); color: #fff; }
+
+        #resetBtn {
+            background: transparent;
+            color: var(--teal-dark);
+            border: 1.5px solid var(--line);
+            font-size: 14px;
+        }
+        #resetBtn:hover { background: #fff; }
+
+        #imageInput, #cameraInput { display: none; }
+
+        #camera, #preview {
+            width: 100%;
+            margin-top: 16px;
+            border-radius: 12px;
+            display: none;
+        }
+        #preview {
+            max-height: 170px;
+            object-fit: contain;
+            background: #fff;
+            border: 1.5px solid var(--line);
+        }
+
+        #result { display: none; margin-top: 16px; }
+
+        .card {
+            background: var(--card);
+            border: 1.5px solid var(--line);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 6px 16px rgba(21, 122, 128, 0.12);
+        }
+
+        .card-head {
+            padding: 13px 15px;
+            border-bottom: 2px solid var(--gold-soft);
+            background: #E1F3F4;
+        }
+        .card-head .title {
+            font-weight: 700;
+            font-size: 17px;
+            color: var(--teal-dark);
+        }
+
+        .card-body { padding: 15px; }
+
+        .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .chip {
+            flex: 1 1 0;
+            min-width: 90px;
+            background: var(--sky-light);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 9px 11px;
+        }
+        .chip .k {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+        .chip .v {
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 3px;
+            color: var(--teal-dark);
+            word-break: break-word;
+        }
+
+        .arabic {
+            background: var(--cream);
+            border: 1px solid var(--gold-soft);
+            border-radius: 12px;
+            padding: 14px;
+            direction: rtl;
+            text-align: right;
+            color: #1F3A3D;
+            font-family: "Amiri", "Traditional Arabic", "Noto Naskh Arabic", "Scheherazade New", serif;
+            font-size: 22px;
+            line-height: 2.2;
+            max-height: 170px;
+            overflow: hidden;
+            position: relative;
+        }
+        .arabic.expanded { max-height: 340px; overflow-y: auto; }
+        .arabic.clamped::after {
+            content: "";
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 44px;
+            background: linear-gradient(to top, var(--cream), rgba(255, 249, 234, 0));
+        }
+        .arabic.expanded::after { display: none; }
+
+        .actions { display: flex; gap: 8px; margin-top: 10px; }
+        .actions button {
+            margin-top: 0;
+            padding: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            background: #fff;
+            color: var(--teal-dark);
+            border: 1.5px solid var(--line);
+        }
+        .actions button:hover { background: #E4F4F5; }
+
+        .note {
+            margin-top: 12px;
+            font-size: 11.5px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .message { font-size: 13.5px; line-height: 1.7; color: var(--text); }
+        .message ul { margin: 8px 0 0; padding-left: 18px; }
+
+        details { margin-top: 12px; font-size: 12.5px; }
+        details summary { cursor: pointer; color: var(--muted); }
+        #extractedText {
+            margin-top: 6px;
+            padding: 9px;
+            background: var(--sky-light);
+            border-radius: 10px;
+            direction: rtl;
+            text-align: right;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        .loading { text-align: center; padding: 28px 10px; }
+        .spinner {
+            width: 36px; height: 36px;
+            margin: 0 auto 12px;
+            border: 4px solid var(--line);
+            border-top-color: var(--teal);
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1> Quran &amp; Hadith Verifier</h1>
+        <p>Take a photo or upload an image to verify the text</p>
+    </div>
+
+    <label for="cameraInput" id="cameraBtn" class="btn">📷 Take Photo</label>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+
+    <button id="uploadBtn">📁 Upload Image</button>
+    <input type="file" id="imageInput" accept="image/*">
+
+    <video id="camera" autoplay muted playsinline></video>
+    <button id="captureBtn">📸 Capture Photo</button>
+
+    <img id="preview" alt="Selected image preview">
+
+    <div id="result">
+        <div id="resultCard" class="card"></div>
+        <button id="resetBtn" class="hidden"> Scan another</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
