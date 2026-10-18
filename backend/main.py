@@ -123,6 +123,7 @@ def search_quran(text: str):
                 best_score, best_matches = score, matched_words
                 best_match = {
                     "surah": surah.get("englishName", ""),
+                    "surahNumber": surah.get("number"),
                     "ayah": ayah.get("numberInSurah", ""),
                     "text": ayah_text,
                 }
@@ -346,6 +347,77 @@ def search_hadith(ocr_text: str):
 
 
 
+
+QURAN_TRANSLATION_EDITIONS = {"en": "en.sahih", "ur": "ur.jalandhry"}
+
+_quran_translation_cache = {}
+_hadith_translation_lookup = {}
+
+
+def get_quran_translations(surah_number, ayah_number) -> dict:
+    """English + Urdu translation of one ayah."""
+    translations = {}
+    if not surah_number or not ayah_number:
+        return translations
+
+    for language, edition in QURAN_TRANSLATION_EDITIONS.items():
+        key = (surah_number, ayah_number, edition)
+
+        if key in _quran_translation_cache:
+            translations[language] = _quran_translation_cache[key]
+            continue
+
+        try:
+            response = requests.get(
+                f"https://api.alquran.cloud/v1/ayah/{surah_number}:{ayah_number}/{edition}",
+                timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code") == 200:
+                text = payload["data"]["text"]
+                _quran_translation_cache[key] = text
+                translations[language] = text
+        except Exception as e:
+            print(f"[QURAN] {language} translation error:", e)
+
+    return translations
+
+
+def _hadith_translation_book(edition: str) -> dict:
+    """{hadith number: text} for one translated book (downloaded once, then cached)."""
+    if edition not in _hadith_translation_lookup:
+        records = load_hadith_collection(edition)
+        _hadith_translation_lookup[edition] = {
+            str(h.get("hadithnumber", "")).strip(): h.get("text", "")
+            for h in records
+        }
+    return _hadith_translation_lookup[edition]
+
+
+def get_hadith_translations(book_name, hadith_number) -> dict:
+    """English + Urdu translation of one hadith."""
+    translations = {}
+    arabic_edition = HADITH_COLLECTIONS.get(book_name)
+    if not arabic_edition or hadith_number in (None, ""):
+        return translations
+
+    name = arabic_edition.replace("ara-", "", 1)
+    if name.endswith("1"):
+        name = name[:-1]
+
+    for language, prefix in (("en", "eng-"), ("ur", "urd-")):
+        try:
+            book = _hadith_translation_book(prefix + name)
+            text = book.get(str(hadith_number).strip())
+            if text:
+                translations[language] = text
+        except Exception as e:
+            print(f"[HADITH] {language} translation error:", e)
+
+    return translations
+
+
 def verify_text(text: str) -> dict:
     """Searches both Quran and Hadith, returns whichever one wins."""
     if not text:
@@ -392,6 +464,19 @@ async def ocr_image(file: UploadFile = File(...)):
         final_text = max([t for t in texts if t], key=len, default="")
 
         result = verify_text(final_text)
+
+        if result["quran"]:
+            result["quran"]["translations"] = get_quran_translations(
+                result["quran"].get("surahNumber"),
+                result["quran"].get("ayah"),
+            )
+
+        if result["hadith"]:
+            result["hadith"]["translations"] = get_hadith_translations(
+                result["hadith"].get("book"),
+                result["hadith"].get("hadithNumber"),
+            )
+
         return {
             "filename": file.filename,
             "text": final_text,
