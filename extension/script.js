@@ -1,326 +1,501 @@
-
-
 const API_URL = "http://127.0.0.1:8000/ocr";
 
+const $ = (id) => document.getElementById(id);
+
+const dropZone = $("drop");
+const cameraBtn = $("cameraBtn");
+const uploadBtn = $("uploadBtn");
+const imageInput = $("imageInput");
+const camera = $("camera");
+const stage = $("stage");
+const preview = $("preview");
+const captureBtn = $("captureBtn");
+const resetBtn = $("resetBtn");
+const stepsList = $("steps");
+const statusBox = $("status");
+const results = $("results");
+const toastBox = $("toast");
+
+let cameraStream = null;
+let isProcessing = false;
+let stepTimers = [];
 
 
 
-const cameraBtn = document.getElementById("cameraBtn");
-const uploadBtn = document.getElementById("uploadBtn");
-const imageInput = document.getElementById("imageInput");
-const camera = document.getElementById("camera");
-const captureBtn = document.getElementById("captureBtn");
-const preview = document.getElementById("preview");
-
-const result = document.getElementById("result");
-const resultCard = document.getElementById("resultCard");
-const resetBtn = document.getElementById("resetBtn");
-
-let stream = null;
-
-const isCameraPage =
-    new URLSearchParams(window.location.search).get("camera") === "1";
-
-
-
-function el(tag, className, text) {
+function el(tag, className = "", text = "") {
     const node = document.createElement(tag);
     if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
+    if (text !== undefined && text !== null && text !== "") {
+        node.textContent = String(text);
+    }
     return node;
 }
 
-function chip(key, value) {
-    const c = el("div", "chip");
-    c.appendChild(el("div", "k", key));
-    c.appendChild(el("div", "v", String(value)));
-    return c;
+function svgIcon(markup, size = 14) {
+    const wrapper = document.createElement("span");
+    wrapper.style.display = "inline-flex";
+    wrapper.innerHTML =
+        `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" ` +
+        `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
+        `stroke-linejoin="round">${markup}</svg>`;
+    return wrapper;
+}
+
+function showStatus(message, type = "") {
+    statusBox.textContent = message;
+    statusBox.className = "status" + (type ? " " + type : "");
+    statusBox.hidden = false;
+}
+
+function hideStatus() {
+    statusBox.hidden = true;
+    statusBox.textContent = "";
+}
+
+let toastTimer = null;
+
+function toast(message) {
+    toastBox.textContent = message;
+    toastBox.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastBox.classList.remove("show"), 2600);
 }
 
 
 
-function showResultArea() {
-    result.style.display = "block";
-    resultCard.innerHTML = "";
-}
 
-function showLoading() {
-    showResultArea();
-    resetBtn.classList.add("hidden");
+const darkQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
 
-    const box = el("div", "loading");
-    box.appendChild(el("div", "spinner"));
-    box.appendChild(el("p", "", "Reading text and searching..."));
-    resultCard.appendChild(box);
-}
-
-function showError(message) {
-    showResultArea();
-    resetBtn.classList.remove("hidden");
-
-    const head = el("div", "card-head error");
-    head.appendChild(el("div", "title", " Could not connect"));
-    resultCard.appendChild(head);
-
-    const body = el("div", "card-body");
-    const msg = el("div", "message");
-    msg.appendChild(el("div", "", message));
-
-    const list = el("ul");
-    list.appendChild(el("li", "", "Make sure the FastAPI server is running."));
-    list.appendChild(el("li", "", "Check that it is at " + API_URL));
-    msg.appendChild(list);
-
-    body.appendChild(msg);
-    resultCard.appendChild(body);
-}
-
-function showNoMatch(extractedText) {
-    showResultArea();
-    resetBtn.classList.remove("hidden");
-
-    const head = el("div", "card-head none");
-    head.appendChild(el("div", "title", "No Matching Quran or Hadith Found"));
-    resultCard.appendChild(head);
-
-    const body = el("div", "card-body");
-    const msg = el("div", "message");
-    msg.appendChild(el("div", "", "Try again with a clearer image:"));
-
-    const list = el("ul");
-    list.appendChild(el("li", "", "Crop so only the Arabic text is visible."));
-    list.appendChild(el("li", "", "Use good lighting and hold the camera steady."));
-    list.appendChild(el("li", "", "Include at least one full line of text."));
-    msg.appendChild(list);
-    body.appendChild(msg);
-
-    resultCard.appendChild(body);
-}
-
-function buildArabicBox(text) {
-    const box = el("div", "arabic", text);
-    const wrap = el("div");
-    wrap.appendChild(box);
-
-    const isLong = text.length > 220;
-    if (isLong) box.classList.add("clamped");
-
-    const actions = el("div", "actions");
-
-    if (isLong) {
-        const toggle = el("button", "", "Show full text");
-        toggle.addEventListener("click", () => {
-            const expanded = box.classList.toggle("expanded");
-            box.classList.toggle("clamped", !expanded);
-            toggle.textContent = expanded ? "Show less" : "Show full text";
-        });
-        actions.appendChild(toggle);
-    }
-
-    const copy = el("button", "", "📋 Copy");
-    copy.addEventListener("click", async () => {
-        try {
-            await navigator.clipboard.writeText(text);
-            copy.textContent = " Copied";
-        } catch (e) {
-            copy.textContent = "Copy failed";
-        }
-        setTimeout(() => (copy.textContent = "📋 Copy"), 1500);
-    });
-    actions.appendChild(copy);
-
-    wrap.appendChild(actions);
-    return wrap;
-}
-
-function showFound(kind, info, extractedText) {
-    showResultArea();
-    resetBtn.classList.remove("hidden");
-
-    // header
-    const head = el("div", "card-head ok");
-    head.appendChild(
-        el("div", "title", kind === "quran" ? "📖 Quran Found ✓" : "📜 Hadith Found ✓")
+function applyTheme() {
+    document.documentElement.setAttribute(
+        "data-theme",
+        darkQuery?.matches ? "dark" : "light"
     );
-    resultCard.appendChild(head);
-
-    
-    const body = el("div", "card-body");
-
-    const chips = el("div", "chips");
-    if (kind === "quran") {
-        chips.appendChild(chip("Surah", info.surah));
-        chips.appendChild(chip("Ayah", info.ayah));
-    } else {
-        chips.appendChild(chip("Book", info.book));
-        chips.appendChild(chip("Hadith No.", info.hadithNumber));
-    }
-    body.appendChild(chips);
-
-    body.appendChild(buildArabicBox(info.text || ""));
-
-    if (kind === "hadith") {
-        body.appendChild(
-            el(
-                "div",
-                "note",
-                "The same hadith can appear in several books. " +
-                "Matching is based on text similarity, so always confirm " +
-                "with a trusted source."
-            )
-        );
-    }
-
-    resultCard.appendChild(body);
 }
 
+darkQuery?.addEventListener?.("change", applyTheme);
 
 
-async function sendImageToOCR(imageBlob) {
-    showLoading();
-
-    const formData = new FormData();
-    formData.append("file", imageBlob, "quran-hadith-image.png");
-
-    try {
-        const response = await fetch(API_URL, {
-            method: "POST",
-            body: formData
-        });
-
-        if (!response.ok) {
-            throw new Error("Server returned " + response.status);
-        }
-
-        const data = await response.json();
-        console.log("OCR response:", data);
-
-        if (data.error) {
-            throw new Error(data.error);
-        }
-
-        if (data.quran) {
-            showFound("quran", data.quran, data.text);
-        } else if (data.hadith) {
-            showFound("hadith", data.hadith, data.text);
-        } else {
-            showNoMatch(data.text);
-        }
-
-    } catch (error) {
-        console.error("OCR request failed:", error);
-        showError(error.message);
-    }
-}
-
-
-
-uploadBtn.addEventListener("click", () => imageInput.click());
-
-imageInput.addEventListener("change", async () => {
-    const file = imageInput.files[0];
-    if (!file) return;
-
-    preview.src = URL.createObjectURL(file);
-    preview.style.display = "block";
-
-    await sendImageToOCR(file);
-    imageInput.value = "";   // allow choosing the same file again
-});
-
-
-
-
-cameraBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    chrome.tabs.create({
-        url: chrome.runtime.getURL("index.html?camera=1")
-    });
-    window.close();
-});
-
-async function startCamera() {
-    try {
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-                facingMode: "environment"
-            },
-            audio: false
-        });
-
-        camera.srcObject = stream;
-        camera.style.display = "block";
-
-        camera.onloadedmetadata = async () => {
-            try {
-                await camera.play();
-                captureBtn.style.display = "block";
-            } catch (error) {
-                console.error("Video play error:", error);
-                alert("Camera opened but video could not play.");
-            }
-        };
-
-    } catch (error) {
-        console.error("Camera error:", error);
-        alert("Unable to access camera.\n\nError: " + error.name);
-    }
-}
 
 function stopCamera() {
-    if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        stream = null;
+    if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
     }
+
     camera.srcObject = null;
-    camera.style.display = "none";
-    captureBtn.style.display = "none";
+    camera.hidden = true;
+    captureBtn.hidden = true;
 }
 
-captureBtn.addEventListener("click", () => {
-    if (!camera.videoWidth || !camera.videoHeight) {
-        alert("Camera is not ready yet.");
+async function startCamera() {
+    hideStatus();
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+        showStatus("Camera access is unavailable. Upload an image instead.", "error");
+        return;
+    }
+
+    try {
+        stopCamera();
+        clearResults();
+
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" },
+            audio: false,
+        });
+
+        camera.srcObject = cameraStream;
+        camera.hidden = false;
+        preview.hidden = true;
+        stage.hidden = false;
+        stage.classList.remove("scanning");
+        captureBtn.hidden = false;
+        resetBtn.hidden = false;
+
+        await camera.play();
+    } catch (error) {
+        console.error("Camera error:", error);
+        showStatus(
+            "Could not open the camera. Check camera permissions or upload an image.",
+            "error"
+        );
+        stopCamera();
+        stage.hidden = true;
+    }
+}
+
+captureBtn.addEventListener("click", async () => {
+    if (!cameraStream || !camera.videoWidth || !camera.videoHeight) {
+        showStatus("Camera is not ready yet.", "error");
         return;
     }
 
     const canvas = document.createElement("canvas");
     canvas.width = camera.videoWidth;
     canvas.height = camera.videoHeight;
-    canvas.getContext("2d").drawImage(camera, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob(async (blob) => {
-        if (!blob) {
-            alert("Could not capture image.");
-            return;
-        }
+    const context = canvas.getContext("2d");
 
-        preview.src = URL.createObjectURL(blob);
-        preview.style.display = "block";
+    if (!context) {
+        showStatus("Could not capture the image.", "error");
+        return;
+    }
 
-        await sendImageToOCR(blob);
-    }, "image/png", 0.95);
+    context.drawImage(camera, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.92)
+    );
+
+    if (!blob) {
+        showStatus("Could not create the captured image.", "error");
+        return;
+    }
+
+    showPreview(blob);
+    stopCamera();
+
+    await sendImageToOCR(new File([blob], "camera-capture.jpg", { type: "image/jpeg" }));
+});
+
+
+
+
+function showPreview(fileOrBlob) {
+    if (preview.src.startsWith("blob:")) URL.revokeObjectURL(preview.src);
+
+    preview.src = URL.createObjectURL(fileOrBlob);
+    preview.hidden = false;
+    camera.hidden = true;
+    stage.hidden = false;
+    resetBtn.hidden = false;
+}
+
+async function handleFile(file) {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+        showStatus("Please select a valid image file.", "error");
+        return;
+    }
 
     stopCamera();
-});
-
-
-
-resetBtn.addEventListener("click", () => {
-    result.style.display = "none";
-    resultCard.innerHTML = "";
-    resetBtn.classList.add("hidden");
-    preview.style.display = "none";
-    preview.removeAttribute("src");
-
-    if (isCameraPage) {
-        startCamera();
-    }
-});
-
-
-
-if (isCameraPage) {
-    startCamera();
+    showPreview(file);
+    await sendImageToOCR(file);
 }
+
+uploadBtn.addEventListener("click", () => imageInput.click());
+
+imageInput.addEventListener("change", async () => {
+    const file = imageInput.files?.[0];
+    await handleFile(file);
+    imageInput.value = "";
+});
+
+["dragenter", "dragover"].forEach((name) =>
+    dropZone.addEventListener(name, (event) => {
+        event.preventDefault();
+        dropZone.classList.add("dragging");
+    })
+);
+
+["dragleave", "drop"].forEach((name) =>
+    dropZone.addEventListener(name, (event) => {
+        event.preventDefault();
+        dropZone.classList.remove("dragging");
+    })
+);
+
+dropZone.addEventListener("drop", (event) => {
+    handleFile(event.dataTransfer?.files?.[0]);
+});
+
+
+
+
+function setStep(index) {
+    stepsList.querySelectorAll("li").forEach((item) => {
+        const position = Number(item.dataset.step);
+        item.classList.toggle("done", position < index);
+        item.classList.toggle("active", position === index);
+    });
+}
+
+function startScanning() {
+    stage.classList.add("scanning");
+    stepsList.hidden = false;
+    setStep(0);
+
+    stepTimers.forEach(clearTimeout);
+    stepTimers = [
+        setTimeout(() => setStep(1), 1800),
+        setTimeout(() => setStep(2), 3400),
+    ];
+}
+
+function stopScanning(success) {
+    stepTimers.forEach(clearTimeout);
+    stepTimers = [];
+    stage.classList.remove("scanning");
+
+    if (success) {
+        setStep(3);
+        setTimeout(() => { stepsList.hidden = true; }, 500);
+    } else {
+        stepsList.hidden = true;
+    }
+}
+
+
+
+
+const CHECK_SVG =
+    '<svg class="check" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/><path d="M11 18.5l5 5 9-10"/></svg>';
+
+function buildTranslationTabs(info) {
+    const translations = info.translations || {};
+    const fragment = document.createDocumentFragment();
+
+    fragment.appendChild(el("div", "tr-title", "Translation / ترجمہ"));
+
+    const segmented = el("div", "segmented");
+    segmented.dataset.active = "ur";
+    segmented.appendChild(el("span", "thumb"));
+
+    const output = el("div", "tr-output");
+
+    function select(key) {
+        segmented.dataset.active = key;
+
+        segmented.querySelectorAll("button").forEach((button) => {
+            const active = button.dataset.key === key;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", String(active));
+        });
+
+        const text = translations[key];
+
+        output.className = "tr-output " + key;
+        output.style.animation = "none";
+        void output.offsetWidth; // restart the fade animation
+        output.style.animation = "";
+
+        if (typeof text === "string" && text.trim()) {
+            output.textContent = text;
+        } else {
+            output.textContent =
+                key === "ur"
+                    ? "Urdu translation is not available for this reference."
+                    : "English translation is not available for this reference.";
+            output.classList.add("missing");
+            output.dir = "ltr";
+        }
+    }
+
+    [
+        { key: "ur", label: "اردو" },
+        { key: "en", label: "English" },
+    ].forEach(({ key, label }) => {
+        const button = el("button", "", label);
+        button.type = "button";
+        button.dataset.key = key;
+        button.addEventListener("click", () => select(key));
+        segmented.appendChild(button);
+    });
+
+    fragment.appendChild(segmented);
+    fragment.appendChild(output);
+
+    select("ur");
+
+    return fragment;
+}
+
+function showFound(kind, info) {
+    const isQuran = kind === "quran";
+    const card = el("article", "result-card");
+
+    // ----- top ribbon -----
+    const top = el("div", "result-top" + (isQuran ? "" : " hadith"));
+    top.insertAdjacentHTML("beforeend", CHECK_SVG);
+
+    const label = el("div", "label");
+    label.appendChild(el("small", "", isQuran ? "Quran verse found" : "Hadith found"));
+    label.appendChild(
+        el(
+            "strong",
+            "",
+            isQuran
+                ? `Surah ${info.surah || ""}`.trim()
+                : info.book || "Hadith"
+        )
+    );
+    top.appendChild(label);
+
+    const number = isQuran ? info.ayah : (info.hadithNumber ?? info.number);
+
+    if (number !== undefined && number !== null && number !== "") {
+        const badge = el("div", "badge" + (String(number).length > 2 ? " wide" : ""));
+        badge.textContent = isQuran ? number : `#${number}`;
+        badge.title = isQuran ? `Ayah ${number}` : `Hadith ${number}`;
+        top.appendChild(badge);
+    }
+
+    card.appendChild(top);
+
+    
+    const body = el("div", "result-body");
+    const arabicWrap = el("div", "arabic-wrap");
+    const arabic = el("p", "arabic");
+    arabic.lang = "ar";
+    arabic.dir = "rtl";
+
+    const arabicText = info.text || "";
+
+    if (isQuran) {
+        arabic.appendChild(el("span", "ornament", "﴿"));
+        arabic.appendChild(document.createTextNode(` ${arabicText} `));
+        arabic.appendChild(el("span", "ornament", "﴾"));
+    } else {
+        arabic.textContent = arabicText;
+    }
+
+    arabicWrap.appendChild(arabic);
+    body.appendChild(arabicWrap);
+
+    // Long hadiths: collapse with a "Read full text" toggle
+    if (!isQuran && arabicText.length > 260) {
+        arabic.classList.add("clamped");
+
+        const tools = el("div", "tools");
+        const more = el("button", "chip-btn", "Read full text");
+        more.type = "button";
+        more.addEventListener("click", () => {
+            const collapsed = arabic.classList.toggle("clamped");
+            more.textContent = collapsed ? "Read full text" : "Show less";
+        });
+
+        tools.appendChild(more);
+        body.appendChild(tools);
+    }
+
+    body.appendChild(buildTranslationTabs(info));
+    card.appendChild(body);
+    results.appendChild(card);
+}
+
+function clearResults() {
+    results.replaceChildren();
+
+}
+
+
+
+async function sendImageToOCR(file) {
+    if (isProcessing) return;
+
+    isProcessing = true;
+    hideStatus();
+    clearResults();
+
+    cameraBtn.disabled = true;
+    uploadBtn.disabled = true;
+    captureBtn.disabled = true;
+
+    startScanning();
+
+    let success = false;
+
+    try {
+        const formData = new FormData();
+        formData.append("file", file); // must match the FastAPI parameter: file
+
+        const response = await fetch(API_URL, { method: "POST", body: formData });
+
+        let data;
+
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error("The server returned an invalid response.");
+        }
+
+        if (!response.ok) {
+            throw new Error(data.detail || `Server error (${response.status}).`);
+        }
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        if (data.quran) showFound("quran", data.quran);
+        if (data.hadith) showFound("hadith", data.hadith);
+
+        if (data.quran || data.hadith) {
+            success = true;
+
+            if (data.quran && data.hadith) {
+                showStatus(
+                    "Possible matches found in both sources. Compare them carefully.",
+                    "warning"
+                );
+            }
+        } else if (data.text) {
+            showStatus(
+                "Text was extracted, but no matching reference was found. Try a clearer image.",
+                "warning"
+            );
+        } else {
+            showStatus(
+                data.message || "No readable text was detected. Try another image.",
+                "warning"
+            );
+        }
+    } catch (error) {
+        console.error("Verification error:", error);
+
+        showStatus(
+            `Could not verify the image. ${error.message || "Check that your FastAPI server is running."}`,
+            "error"
+        );
+    } finally {
+        stopScanning(success);
+
+        isProcessing = false;
+        cameraBtn.disabled = false;
+        uploadBtn.disabled = false;
+        captureBtn.disabled = false;
+    }
+
+    if (success) {
+        results.firstElementChild?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+
+
+
+function resetApp() {
+    stopCamera();
+    stopScanning(false);
+    clearResults();
+    hideStatus();
+
+    if (preview.src.startsWith("blob:")) URL.revokeObjectURL(preview.src);
+
+    preview.removeAttribute("src");
+    preview.hidden = true;
+    stage.hidden = true;
+    resetBtn.hidden = true;
+    imageInput.value = "";
+}
+
+cameraBtn.addEventListener("click", startCamera);
+resetBtn.addEventListener("click", resetApp);
+
+window.addEventListener("pagehide", () => {
+    if (cameraStream) cameraStream.getTracks().forEach((track) => track.stop());
+});
+
+applyTheme();
