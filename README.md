@@ -108,4 +108,9 @@ The source (for example *Surah Al-Mulk* or *Sahih Bukhari*) and its **Ayah / Had
 - [fawazahmed0/hadith-api](https://github.com/fawazahmed0/hadith-api) for the Hadith collections and translations
 - [EasyOCR](https://github.com/JaidedAI/EasyOCR) for text recognition
 
+Demo:
+
+
+https://github.com/user-attachments/assets/f4928b4c-b2b5-49c4-819c-4674a2191e41
+
 
