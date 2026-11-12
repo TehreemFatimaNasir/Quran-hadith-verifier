@@ -48,18 +48,12 @@ Every result has a one-tap switch between **اردو** and **English**.
 ### 🎯 Highlighted Reference
 The source (for example *Surah Al-Mulk* or *Sahih Bukhari*) and its **Ayah / Hadith number** are highlighted in a Reference card directly under the matched text, so the result is clear at a glance.
 
-### 🎨 Clean, Modern Interface
-- Elegant **denim** colour theme with its own toolbar icon
-- Smooth scan animation with a step-by-step progress indicator
-- Arabic typography (Amiri) and Urdu Nastaliq
-- Long Hadith texts are collapsed with a **Read full text** option
-- Follows your device's **light / dark mode**
 
 
 
 
-                                             
 
+                                  
 
 1. **Input** — an image goes through OCR; selected webpage text is sent directly.
 2. **Normalise** — diacritics and letter variants are removed so small differences do not matter.
